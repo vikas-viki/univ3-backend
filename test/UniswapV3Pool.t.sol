@@ -3,7 +3,7 @@
 pragma solidity ^0.8.14;
 
 import "forge-std/Test.sol";
-// import "forge-std/console.sol";
+import "./TestUtils.sol";
 
 import "./ERC20Mintable.sol";
 import "../src/UniswapV3Pool.sol";
@@ -32,7 +32,7 @@ contract UniswapV3PoolTest is Test {
         token1 = new ERC20Mintable("USDC", "USDC", 18);
     }
 
-    function setUpTestCase(
+    function setupTestCase(
         TestCaseParams memory params
     ) public returns (uint256 poolBalance0, uint256 poolBalance1) {
         token0.mint(address(this), params.wethBalance);
@@ -78,7 +78,7 @@ contract UniswapV3PoolTest is Test {
             mintLiquidity: true
         });
 
-        (uint256 poolBalance0, uint256 poolBalance1) = setUpTestCase(params);
+        (uint256 poolBalance0, uint256 poolBalance1) = setupTestCase(params);
 
         uint256 expectedAmount0 = 0.998976618347425280 ether;
         uint256 expectedAmount1 = 5000 ether;
@@ -144,15 +144,69 @@ contract UniswapV3PoolTest is Test {
             mintLiquidity: false
         });
 
-        setUpTestCase(params);
+        setupTestCase(params);
 
-        vm.expectRevert(abi.encodeWithSignature("InvalidTickRange()"));
+        vm.expectRevert(TestUtils.encodeError("InvalidTickRange()"));
         pool.mint(address(this), type(int24).min, type(int24).max, 0);
 
-        vm.expectRevert(abi.encodeWithSignature("ZeroLiquidity()"));
+        vm.expectRevert(TestUtils.encodeError("ZeroLiquidity()"));
         pool.mint(address(this), 84222, 86129, params.liquidity);
 
-        vm.expectRevert(abi.encodeWithSignature("InsufficientInputAmount()"));
+        vm.expectRevert(TestUtils.encodeError("InsufficientInputAmount()"));
         pool.mint(address(this), 84222, 86129, 1517882343751509868544);
+    }
+
+    function testSwapBuyEth() public {
+        TestCaseParams memory params = TestCaseParams({
+            wethBalance: 1 ether,
+            usdcBalance: 5000 ether,
+            currentTick: 85176,
+            lowerTick: 84222,
+            upperTick: 86129,
+            liquidity: 1517882343751509868544,
+            currentSqrtP: 5602277097478614198912276234240,
+            shouldTransferInCallback: true,
+            mintLiquidity: true
+        });
+
+        setupTestCase(params);
+        token1.mint(address(this), 42 ether);
+
+        int256 userBalance0Before = int256(token0.balanceOf(address(this)));
+        (int256 amount0Delta, int256 amount1Delta) = pool.swap(address(this));
+        (uint160 sqrtPriceX96, int24 tick) = pool.slot0();
+
+        assertEq(amount0Delta, -0.008396714242162444 ether, "invalid ETH out");
+        assertEq(amount1Delta, 42 ether, "invalid USDC in");
+        assertEq(
+            token0.balanceOf(address(this)),
+            uint256(userBalance0Before - amount0Delta),
+            "invalid user ETH balance"
+        );
+        assertEq(
+            token1.balanceOf(address(this)),
+            0,
+            "invalid user USDC balance"
+        );
+        assertEq(
+            sqrtPriceX96,
+            5604469350942327889444743441197,
+            "invalid current sqrtP"
+        );
+        assertEq(tick, 85184, "invalid current tick");
+        assertEq(
+            pool.liquidity(),
+            1517882343751509868544,
+            "invalid current liquidity"
+        );
+    }
+
+    function uniswapV3SwapCallback(int256 amount0, int256 amount1) public {
+        if (amount0 > 0) {
+            token0.transfer(msg.sender, uint256(amount0));
+        }
+        if (amount1 > 0) {
+            token1.transfer(msg.sender, uint256(amount1));
+        }
     }
 }
