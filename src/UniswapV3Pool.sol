@@ -8,6 +8,8 @@ import "./interfaces/IUniswapV3MintCallback.sol";
 import "./lib/Tick.sol";
 import "./lib/Position.sol";
 
+// import "forge-std/console.sol";
+
 contract UniswapV3Pool {
     using Tick for mapping(int24 => Tick.Info);
     using Position for mapping(bytes32 => Position.Info);
@@ -104,8 +106,9 @@ contract UniswapV3Pool {
             amount1
         );
 
-        if (amount0 > 0 && balance0Before + amount0 > balance0())
+        if (amount0 > 0 && balance0Before + amount0 > balance0()) {
             revert InsufficientInputAmount();
+        }
 
         if (amount1 > 0 && balance1Before + amount1 > balance1())
             revert InsufficientInputAmount();
